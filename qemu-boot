@@ -1,0 +1,9 @@
+#!/bin/bash
+
+MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+${MYDIR}/qemu/arm-softmmu/qemu-system-arm \
+    -M xilinx-zynq-a9 -m 2048 \
+    -nographic -serial /dev/null -serial mon:stdio \
+    -kernel ${MYDIR}/u-boot/spl/u-boot-spl.bin \
+    -sd ${1}

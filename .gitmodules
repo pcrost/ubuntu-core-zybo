@@ -1,0 +1,9 @@
+[submodule "u-boot"]
+	path = u-boot
+	url = https://github.com/pcrost/u-boot.git
+[submodule "qemu"]
+	path = qemu
+	url = https://github.com/pcrost/qemu.git
+[submodule "linux"]
+	path = linux
+	url = git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git

@@ -1,0 +1,8 @@
+# where to load initrd
+loadaddr=0x00080000
+initrd_addr=0x03000000
+fdtaddr=0x04000000
+fdtfile=system.dtb
+bootpart=0:1
+bootuenv=load mmc ${bootpart} ${loadaddr} snappy-system.txt; env import -t $loadaddr $filesize; run snappy_boot
+

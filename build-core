@@ -1,0 +1,53 @@
+#!/bin/bash -ex
+
+MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+KERNEL_DIR=${MYDIR}/linux
+UBOOT_DIR=${MYDIR}/u-boot
+QEMU_DIR=${MYDIR}/qemu
+DISK_IMAGE=ubuntu-15.04-snappy-armhf-bbb.img
+
+if [ $# -ne 1 ]; then
+    echo "$0 requires exactly one argument - output filename"
+    exit 1
+fi
+
+for DIR in ${KERNEL_DIR} ${UBOOT_DIR} ${QEMU_DIR}; do
+    if [ ! -e ${DIR}/MAINTAINERS ]; then
+        git submodule update --init ${DIR}
+    fi
+done
+
+if [ ! -e ${MYDIR}/${DISK_IMAGE} ] || \
+   [ "$(md5sum ${MYDIR}/${DISK_IMAGE} | sed 's/ .*$//')" != \
+     "2a7350b7f92b4beba4d3df1295fd410d" ]; then
+    pushd ${MYDIR}
+        #rm -f ${DISK_IMAGE}*
+        wget http://cdimage.ubuntu.com/ubuntu-snappy/15.04/edge/${DISK_IMAGE}.xz
+        unxz ${DISK_IMAGE}.xz
+    popd
+fi
+
+pushd ${KERNEL_DIR}
+    ARCH=arm ./scripts/kconfig/merge_config.sh \
+        ./arch/arm/configs/multi_v7_defconfig \
+        ${MYDIR}/kconfig-extra
+    ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- make -j8
+popd
+
+pushd ${UBOOT_DIR}
+    make zynq_zybo_defconfig
+    CROSS_COMPILE=arm-none-eabi- make -j8
+popd
+
+pushd ${QEMU_DIR}
+    ./configure --target-list=arm-softmmu
+    make -j8
+popd
+
+COREIMAGE=./ubuntu-15.04-snappy-armhf-bbb.img \
+SYSTEM_DTB=${MYDIR}/zynq-zybo.dtb \
+ZIMAGE=${KERNEL_DIR}/arch/arm/boot/zImage \
+INITRD=${MYDIR}/initrd.img \
+UBOOT=${MYDIR}/u-boot \
+OUTFILE=${1} \
+    ${MYDIR}/mkdisk-core

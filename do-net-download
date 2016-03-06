@@ -1,0 +1,20 @@
+#!/bin/bash
+
+if [ "$(which pv)" = "" ]; then
+    echo "WARNING: pv not installed, cannot do progress bars, Install pv \
+         for progress information support"
+    OUTPUTTER="cat"
+else
+    OUTPUTTER="pv -p"
+fi
+
+if [ "$(which sshpass)" = "" ]; then
+    echo "WARNING: sshpass not installed. You will have to enter board \
+         password \"root\" manually"
+    SSHPASS=""
+else
+    SSHPASS="sshpass -proot"
+fi
+
+${OUTPUTTER} ${1} | ${SSHPASS} ssh root@${2} "cat > /dev/mmcblk0"
+${SSHPASS} ssh root@${2} "sync"

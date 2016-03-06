@@ -1,0 +1,83 @@
+MATERIALS
+
+Digilent Zybo board with 8GB SD card (or higher)
+LAN 
+
+DEPENDENCIES
+
+I am using Ubuntu 14.04. The following packages are needed:
+
+sudo apt-get install \
+    mtools gcc-arm-linux-gnueabi git \
+    libfdt-dev \
+    pv sshpass
+
+pv and sshpass are optional but do make the board download experience more
+friendly.
+
+Other distros should work fine, for older distros the hardest part is going
+to be getting arm-gcc which may not be present in your package manager.
+
+I assume you have access to the LAN controls (at home this usually means
+"the router password"). If you are at work this may mean access to the lab
+LAN. Some people just setup a small LAN on their desk they can control,
+otherwise you need IT support or some hacks to find out what IP your board
+got for DHCP lease.
+
+DOWNLOAD SOURCES:
+
+Clone this repo:
+
+git clone https://github.com/pcrost/ubuntu-core-zybo.git
+cd ubuntu-core-zybo
+
+BUILD:
+
+./build-core myimg
+
+NETWORK DOWNLOAD:
+
+I am assuming your Zybo board is fresh and has the factory Linux image in
+QSPI flash. If you are using a second-hand board or have been doing QSPI
+work you may not have this installed. You can re-image your board or use SD
+card image instructions instead if this is the case.
+
+If you don't know what I am taking about, it's more likely that your board
+does work than doesn't.
+
+Put your Zybo board in QSPI boot mode (the jumper near the VGA port).
+Plug in LAN cable on same network as dev PC.
+Open up LAN settings and look up LAN devices. Note what is there.
+Power on board. Wait about 15 sec or so,
+Refresh LAN devices. There should be a new device. Note its IP.
+
+Download SD image to the board:
+./do-net-download myimg <board-ip>
+
+Reconfigure jumper for SD boot. Power cycle the board.
+
+SD CARD DOWNLOAD (root required):
+
+Eject the SD card from the Zybo and put in your dev machine
+Figure out the dev node for the sd card. You want the dev node for the
+disk itself not the partitions. E.g. /dev/mmcblk0 NOT d/dev/mmcblk0_p0.
+
+sudo dd if=myimg of=</dev/devnode> bs=16k
+sync
+
+Put the SD card back in the board
+Put your Zybo board in SD boot mode (the jumper near the VGA port).
+
+QEMU BOOT:
+
+./qemu-boot myimg
+
+This will boot the image in an emulator.
+
+RUNNING:
+
+Once running, look up the board IP in your LAN settings. ssh to it:
+
+ssh ubuntu@<board-ip>
+
+Login with the password "ubuntu"

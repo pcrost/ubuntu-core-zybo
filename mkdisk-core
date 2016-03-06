@@ -1,0 +1,118 @@
+#!/bin/bash -ex
+
+MYDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+IMAGE_SIZE="8G"
+BOOT_PART_SIZE="255" #MB
+
+function usage {
+    echo "usage:"
+    echo "UBOOT=uboot-tree ZIMAGE=zImage INITRD=initrd.img SYSTEM_DTB=system.dtb COREIMAGE=rootfs.img OUTFILE=outfile $0"
+    echo
+    echo "Summary of options:"
+    echo "UBOOT      - The u-boot directory."
+    echo "             See u-boot source and Xilinx UG585 for details"
+    echo "ZIMAGE     - The Linux kernel. Must be in zImage format"
+    echo "INITRD     - The Ubuntu core initrd"
+    echo "SYSTEM_DTB - The board specific DTB. Often build alongside the Kernel"
+    echo "COREIMAGE  - The ubuntu core disk image"
+    echo "OUTFILE    - The output file (or dev node). Mill ether be created or dd'd into.
+                       Will prompt for sudo if permissions are not available for current user."
+    exit 255
+}
+
+function file_missing {
+    echo "ERROR: must define $1 enviroment variable"
+    usage
+}
+
+[ -z ${UBOOT}       ] && file_missing "BOOT_BIN" "built u-boot tree"
+[ -z ${ZIMAGE}      ] && file_missing "ZIMAGE" "linux kernel image (zImage format)"
+[ -z ${INITRD}      ] && file_missing "INITRD" "Ubuntu core initrd"
+[ -z ${SYSTEM_DTB}  ] && file_missing "SYSTEM_DTB" "system device tree blob (DTB)"
+[ -z ${COREIMAGE}   ] && file_missing "COREIMAGE" "Target code image (e.g. Ubuntu)"
+[ -z ${OUTFILE}     ] && file_missing "OUTFILE" "output dev node or file"
+
+function newfile {
+    rm -rf $1
+    truncate --size=$2 $1
+}
+
+partx -l ${COREIMAGE}
+
+PARTS="$(expr ${BOOT_PART_SIZE} \* 1024 \* 2) \
+         $(partx -l ${COREIMAGE} | sed 's/^.*[ \t]\([0-9][0-9]*\)[ \t]*sectors.*$/\1/' | \
+         tail --lines=3)"
+
+ROOTFS_SKIP="$(expr $(partx -l ${COREIMAGE} | tail --lines=3 | \
+                      head --lines=1 | \
+                      sed 's/^.*:[ \t]*\([0-9][0-9]*\)-.*$/\1/') \
+               / 16)"
+
+TEMP=/tmp/$$.part_table
+
+newfile ${TEMP}.img ${IMAGE_SIZE}
+
+sed -e 's/^[\t ]*\([\+0-9a-zA-Z]*\)[ \t]*#.*$/\1/' << EOF > ${TEMP}.fdisk
+  o # clear the in memory partition table
+EOF
+
+PART_NUM="0"
+
+for PART in $PARTS; do
+    PART_NUM=$((PART_NUM + 1))
+        sed -e 's/^[\t ]*\([\+0-9a-zA-Z]*\)[ \t]*#.*$/\1/' << EOF >> ${TEMP}.fdisk
+  n # new partition
+  p # primary partition
+  ${PART_NUM} # partion number 2
+    # default, start immediately after preceding partition
+  +$((${PART} / 2))K # 7GB main partition
+EOF
+done
+
+sed -e 's/^[\t ]*\([\+0-9a-zA-Z]*\)[ \t]*#.*$/\1/' << EOF >> ${TEMP}.fdisk
+  p # print the in-memory partition table
+  w # write the partition table
+  q # and we're done
+  y
+EOF
+
+fdisk ${TEMP}.img < ${TEMP}.fdisk
+
+#We just want the partition table for the moment.
+truncate --size=1M ${TEMP}.img
+
+newfile ${TEMP}.p0.img ${BOOT_PART_SIZE}M
+mkfs.msdos -F 32 -n system-boot ${TEMP}.p0.img
+
+mcopy -i ${TEMP}.p0.img ${UBOOT}/spl/boot.bin ::/BOOT.BIN
+mcopy -i ${TEMP}.p0.img ${UBOOT}/u-boot-dtb.img ::/u-boot-dtb.img
+
+for FILE in uEnv.txt snappy-system.txt; do
+    mcopy -i ${TEMP}.p0.img ${MYDIR}/${FILE} ::/${FILE}
+done
+
+for SYSTEM in a b; do
+    mmd -i ${TEMP}.p0.img ::/${SYSTEM}
+    mmd -i ${TEMP}.p0.img ::/${SYSTEM}/dtbs
+    mcopy -i ${TEMP}.p0.img ${ZIMAGE} ::/${SYSTEM}/vmlinuz
+    mcopy -i ${TEMP}.p0.img ${INITRD} ::/${SYSTEM}/initrd.img
+    mcopy -i ${TEMP}.p0.img ${SYSTEM_DTB} ::/${SYSTEM}/dtbs/system.dtb
+done
+
+cat ${TEMP}.p0.img >> ${TEMP}.img
+dd if=${COREIMAGE} skip=${ROOTFS_SKIP} bs=8k >> ${TEMP}.img
+
+#truncate --size=${IMAGE_SIZE} ${TEMP}.img
+
+if [ -e ${OUTFILE} ] && [ ! -w ${OUTFILE} ]; then
+    SUDO="sudo"
+fi
+
+if [ ! -e ${OUTFILE} ] || [ -f ${OUTFILE} ]; then
+    ${SUDO} mv ${TEMP}.img ${OUTFILE}
+else
+    ${SUDO} dd if=${TEMP}.img of=${OUTFILE} bs=1M conv=notrunc
+fi
+
+rm -rf ${TEMP}*
